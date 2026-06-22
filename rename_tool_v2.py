@@ -107,7 +107,20 @@ def scan_files():
     season_str = season_str.upper()
 
     video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.rmvb', '.ts')
-    ep_pattern = re.compile(r'[Ss]\d{1,2}[Ee](\d{1,2})|[Ee][Pp]?(\d{1,2})|[^a-zA-Z0-9](\d{1,2})[^a-zA-Z0-9]')
+    # Numbers that should NOT be treated as episode numbers
+    SKIP_NUMBERS = {1080, 720, 480, 2160, 264, 265, 50}
+    ep_patterns = [
+        # 1. S01E02 format (highest priority)
+        re.compile(r'[Ss]\d{1,2}[Ee](\d{1,3})'),
+        # 2. EP02 or E02 format
+        re.compile(r'(?:^|[^a-zA-Z0-9])[Ee][Pp]?(\d{1,3})(?:[^a-zA-Z0-9]|$)'),
+        # 3. Chinese format: 第04集 / 第04話
+        re.compile(r'第\s*(\d{1,3})\s*[集話话期]'),
+        # 4. Filename starts with episode number: "01.xxx" or "01 xxx"
+        re.compile(r'^(\d{1,3})(?:[\.\-_ ])'),
+        # 5. Dash/space/dot separated number: " - 05 - " or ".05."
+        re.compile(r'(?:^|[\.\-_ ])(\d{1,3})(?:[\.\-_ ]|$)'),
+    ]
 
     pending_renames = []
     
@@ -120,11 +133,22 @@ def scan_files():
             ext = os.path.splitext(file)[1]
             if ext.lower() not in video_extensions:
                 continue
-                
-            match = ep_pattern.search(file)
-            if match:
-                ep_num_str = next(g for g in match.groups() if g is not None)
-                ep_num = int(ep_num_str)
+
+            # Strip extension before matching to avoid false matches
+            name_no_ext = os.path.splitext(file)[0]
+            
+            ep_num = None
+            for pattern in ep_patterns:
+                match = pattern.search(name_no_ext)
+                if match:
+                    num = int(match.group(1))
+                    # Skip resolution-like numbers (1080, 720, etc.)
+                    if num in SKIP_NUMBERS:
+                        continue
+                    ep_num = num
+                    break
+                    
+            if ep_num is not None:
                 season_ep_str = f"{season_str}E{ep_num:02d}"
                 
                 name_parts = []
